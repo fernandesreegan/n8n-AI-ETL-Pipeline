@@ -1,0 +1,344 @@
+{
+  "name": "ETL AI Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "binaryPropertyName": "=File_upload",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        -32,
+        -32
+      ],
+      "id": "0f33582c-1413-4e5f-948f-feaec7d90007",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "formTitle": "File Upload",
+        "formDescription": "Please upload the student file",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "File upload",
+              "fieldType": "file"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.6,
+      "position": [
+        -528,
+        -16
+      ],
+      "id": "6a4ed31d-2cba-478f-8dda-12b9118fe14f",
+      "name": "CSV Upload",
+      "webhookId": "70518a7b-799f-4127-beb0-800bc566e9ee"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Clean and validate this student enrollment row and return ONLY a JSON object.\n\nRow data: {{ JSON.stringify($json) }}\n\nRules:\n- **Student_ID:** Trim spaces and preserve the original ID.\n- **Name:** Convert to Title Case (Example: fernandes a → Fernandes A).\n- **Email:**\n  - Trim spaces and convert to lowercase.\n  - Remove accidental spaces within the email address.\n  - Correct obvious spelling mistakes in common email domains (e.g., gmial.com → gmail.com, gmai.com → gmail.com, yahooo.com → yahoo.com, outlok.com → outlook.com).\n  - Fix obvious email formatting issues, such as missing @ when the intended address is unambiguous, or duplicate @ symbols.\n  - Do not guess or modify the username portion of the email.\n  - Validate the corrected email format.\n  - If the email cannot be confidently corrected or remains invalid, set `INVALID_EMAIL`.\n- **Phone:** Remove spaces, hyphens, and special characters. If fewer than 10 digits remain, set `MISSING`. Preserve the phone number as a string.\n- **Course:** Standardize to one of these values only: `Python`, `Machine Learning`, or `Data Science`. Correct obvious spelling mistakes. If the course cannot be identified, set `UNKNOWN`.\n- **Fee_Paid:** Convert yes/YES/true/1 to `true` and no/NO/false/0 to `false`. If unclear, return `null`.\n- **City:** Convert to Title Case. If empty or missing, set `UNKNOWN`.\n- **Enrolled_Date:** Convert valid dates to `YYYY-MM-DD`. If invalid or ambiguous, return `null`.\n\nImportant:\n- Preserve all original JSON field names.\n- Return all 8 student enrollment fields.\n- Do not invent missing information.\n- Return valid JSON data types (Boolean and null without quotes).\n- Return ONLY one raw JSON object.\n- No explanation, no markdown, and no code fences.",
+        "messages": {
+          "messageValues": []
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        144,
+        -32
+      ],
+      "id": "ea6d1b2c-f866-4efd-91fb-712296d1fac6",
+      "name": "Basic LLM Chain"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        112,
+        176
+      ],
+      "id": "085abe84-42f8-4bba-8070-aa612ad477f6",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "Bmrji1uGueNpmDPo",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $input.all();\n\nreturn items.map((item, index) => {\n  try {\n    // 1. Get AI output\n    let raw = item.json.text ?? item.json;\n\n    // 2. Parse JSON string\n    if (typeof raw === \"string\") {\n      raw = raw.trim();\n\n      // Remove Markdown code blocks if present\n      raw = raw\n        .replace(/^```(?:json)?\\s*/i, \"\")\n        .replace(/\\s*```$/, \"\");\n\n      raw = JSON.parse(raw);\n    }\n\n    // 3. Clean and normalize data\n    const email = String(raw.Email ?? \"\").trim().toLowerCase();\n\n    const cleaned = {\n      Student_ID: String(raw.Student_ID ?? \"\").trim(),\n      Name: String(raw.Name ?? \"\").trim(),\n      Email: email,\n      Phone: String(raw.Phone ?? \"\").replace(/\\D/g, \"\"),\n      Course: String(raw.Course ?? \"\").trim(),\n      Fee_Paid: raw.Fee_Paid === true ||\n                String(raw.Fee_Paid).toLowerCase() === \"true\",\n      City: String(raw.City ?? \"\").trim(),\n      Enrolled_Date: String(raw.Enrolled_Date ?? \"\").trim(),\n\n      // 4. Validate email\n      Email_Valid: /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email),\n\n      // 5. Validate phone (10 digits)\n      Phone_Valid: /^\\d{10}$/.test(\n        String(raw.Phone ?? \"\").replace(/\\D/g, \"\")\n      ),\n\n      // 6. Processing status\n      Parse_Status: \"Success\"\n    };\n\n    return { json: cleaned };\n\n  } catch (error) {\n    return {\n      json: {\n        Item_Number: index + 1,\n        Parse_Status: \"Failed\",\n        Error: error.message,\n        Raw_Data: item.json.text ?? item.json\n      }\n    };\n  }\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        704,
+        64
+      ],
+      "id": "cc283f3f-df96-4c4e-b2f7-56bd5cdb12c0",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        992,
+        -128
+      ],
+      "id": "c44ba295-5471-401b-964c-6c14cb609f73",
+      "name": "Convert to File"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "70af3e3b-538a-43f3-8d04-65e968aa50d0",
+              "leftValue": "={{ $json.City }}",
+              "rightValue": "Chennai",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "4d26771d-d01d-4421-9a5b-ea340adacd04",
+              "leftValue": "={{ /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test($json.Email ?? '') }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        704,
+        -112
+      ],
+      "id": "1f33cdee-f590-4ef4-8c5b-bf62413583a5",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        448,
+        -32
+      ],
+      "id": "0311ec69-e7b4-44a8-86e8-78ca8c526c5a",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json['File upload'] }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "array",
+                      "operation": "notEmpty",
+                      "singleValue": true
+                    },
+                    "id": "23c683ad-b6c9-48f6-b191-f2d601e5533f"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "8e9a6657-0c78-49f7-8c17-7537f3939145",
+                    "leftValue": "={{ $json['File upload'] }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "array",
+                      "operation": "empty",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -288,
+        -16
+      ],
+      "id": "f13158e8-5ed6-45c8-809a-655487fce941",
+      "name": "Switch"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "CSV Upload": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Convert to File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "b56bdee8-7260-44bc-9c2d-00ae3c04d39f",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "e6100e540e4f6a31f3e60af3c69369c8d0655c692ad244524efdf431edb28d08"
+  },
+  "nodeGroups": [],
+  "id": "lPBDvIDTObneswua",
+  "tags": []
+}
